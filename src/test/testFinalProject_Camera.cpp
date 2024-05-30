@@ -13,97 +13,66 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <opencv2/xfeatures2d/nonfree.hpp>
 
-#include "dataStructures.h"
-#include "matching2D.hpp"
-#include "objectDetection2D.hpp"
-#include "lidarData.hpp"
-#include "camFusion.hpp"
+#include "../dataStructures.h"
+#include "testMatching2D.hpp"
+#include "../objectDetection2D.hpp"
+#include "../lidarData.hpp"
+#include "../camFusion.hpp"
+
+struct TestVars
+{
+
+    std::pair<std::string, std::string> detDesc;
+    std::vector<size_t> keypoints;
+    std::vector<std::pair<double, double>> detDescTime;
+    std::vector<std::pair<double, double>> ttcCameraLidar;
+    std::vector<double> diffTTC;
+
+    void getKeypoint(size_t kpt)
+    {
+        keypoints.push_back(kpt);
+    }
+
+    void getElapsedTime(double detT, double descT)
+    {
+        detDescTime.emplace_back(detT, descT);
+    }
+
+    void emplaceTTC(double ttcCamera, double ttcLidar)
+    {
+        ttcCameraLidar.emplace_back(ttcCamera, ttcLidar);
+    }
+
+    void getDiff()
+    {
+        for(auto& _ttc: ttcCameraLidar)
+        {
+            double _diff = _ttc.first > _ttc.second ? _ttc.first - _ttc.second : _ttc.second - _ttc.first;
+            diffTTC.push_back(_diff);
+        }
+    }
+
+    double getMean()
+    {
+        double _sum = 0.0;
+        for(auto& _diff: diffTTC)
+        {
+            _sum += _diff;
+        }
+
+        return _sum / diffTTC.size();
+    }
+};
+
 
 using namespace std;
 
 /* MAIN PROGRAM */
-int main(int argc, const char *argv[])
+
+void evaluate(string det_type, string desc_type, ofstream& logStream)
 {
-    /* OBTAIN THE DETECTOR AND DESCRIPTOR TYPES */
-    string detector[] = {"SHITOMASI", "HARRIS", "FAST", "BRISK", "ORB", "AKAZE", "SIFT"};
-    string descriptor[] = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
-    string det_type = "";     // SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
-    string desc_type = "";        // BRIEF, ORB, FREAK, AKAZE, SIFT
-    
-    // Change the value to "true" if the given arguments will be handled
-    bool err_handle = false;
-    
-    // Choose a detector type according the passed argument(s)
-    if(argc > 1)
-    {
-        for(int i = 0; i < sizeof(detector) / sizeof(string); i++)
-        {
-            if(detector[i].compare(argv[1]) == 0)
-            {
-                det_type = argv[1];
-                break;
-            }
-        }
-        if(det_type.compare("") == 0)
-        {
-            cout << "The given detector argument does not exist. The default detector method will be used" << endl;
-            det_type = "ORB";
-        }      
-    }
-    else if(argc == 1)
-    {
-        cout << "No detector and descriptor arguments are passed. The default detector and descriptor methods will be used" << endl;
-        det_type = "ORB";
-        desc_type = "FREAK";
-    }
-
-    // Choose a descriptor type according the passed argument(s)
-    if(argc > 2)
-    {
-        // The SIFT detector is incompatible with the ORB and the AKAZE descriptors
-        bool err_sift = det_type.compare("SIFT") == 0 && (descriptor[1].compare(argv[2]) == 0 || descriptor[3].compare(argv[2]) == 0);
-        // The AKAZE detector is only compatible with the AKAZE detector
-        bool err_akaze = det_type.compare("AKAZE") == 0 && descriptor[3].compare(argv[2]) != 0;
-        for(int i = 0; i < sizeof(descriptor) / sizeof(string); i++)
-        {
-            if(descriptor[i].compare(argv[2]) == 0)
-            {
-                if(err_sift && err_handle)
-                {
-                    cout << "The given descriptor argument is incompatible with the given detector type. The default descriptor method will be used" << endl;
-                    desc_type = descriptor[4]; // SIFT
-                    break;
-                }
-                if(err_akaze && err_handle)
-                {
-                    cout << "The given descriptor argument is incompatible with the given detector type. The default descriptor method will be used" << endl;
-                    desc_type = descriptor[3]; // AKAZE
-                    break;
-                }
-                desc_type = argv[2];
-                break;
-            }
-        }
-        if(desc_type.compare("") == 0)
-        {
-            cout << "The given descriptor argument does not exist. The default descriptor method will be used" << endl;
-            desc_type = "FREAK";
-        }
-    }
-    else if(argc == 2)
-    {
-        cout << "No detector argument is passed. The default descriptor method will be used." << endl;
-        // The SIFT detector is incompatible with the ORB and the AKAZE descriptors
-        if(det_type.compare("SIFT") == 0)
-            desc_type = descriptor[4]; // BRIEF, FREAK, [SIFT]
-        // The AKAZE detector is only compatible with the AKAZE detector
-        else if(det_type.compare("AKAZE"))
-            desc_type = descriptor[3];
-        else
-            desc_type = "FREAK";
-    }
-
     /* INIT VARIABLES AND DATA STRUCTURES */
+
     // The path of the dataset
     string dataPath = "../";
 
@@ -146,16 +115,24 @@ int main(int argc, const char *argv[])
     P_rect_00.at<double>(2,0) = 0.000000e+00; P_rect_00.at<double>(2,1) = 0.000000e+00; P_rect_00.at<double>(2,2) = 1.000000e+00; P_rect_00.at<double>(2,3) = 0.000000e+00;    
 
     // misc
-    double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for LiDAR and camera
+    double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
 
+    double t_det, t_desc;
+    TestVars test;
+
     /* MAIN LOOP OVER ALL IMAGES */
+
+    std::cout << "###############################################################" << endl <<
+                 "Detector: " << det_type << ", Descriptor: " << desc_type << endl <<
+                 "###############################################################" << endl;
 
     for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex+=imgStepWidth)
     {
-        bVis = true;
+        
+        bVis = false;
         /* LOAD IMAGE INTO BUFFER */
 
         // Assemble the filenames for the current index
@@ -208,7 +185,7 @@ int main(int argc, const char *argv[])
         clusterLidarWithROI((dataBuffer.end()-1)->boundingBoxes, (dataBuffer.end() - 1)->lidarPoints, shrinkFactor, P_rect_00, R_rect_00, RT);
 
         // Visualize the 3D objects
-        bVis = true;
+        bVis = false;
         if(bVis)
         {
             show3DObjects((dataBuffer.end()-1)->boundingBoxes, cv::Size(4.0, 20.0), cv::Size(2000, 2000), true);
@@ -217,6 +194,9 @@ int main(int argc, const char *argv[])
 
         cout << "#4 : CLUSTER LIDAR POINT CLOUD done" << endl;
         
+        
+        // REMOVE THIS LINE BEFORE PROCEEDING WITH THE FINAL PROJECT
+        //continue; // skips directly to the next image without processing what comes beneath
 
         /* DETECT IMAGE KEYPOINTS */
 
@@ -232,14 +212,14 @@ int main(int argc, const char *argv[])
 
         if (detectorType.compare("SHITOMASI") == 0)
         {
-            detKeypointsShiTomasi(keypoints, imgGray, bVis);
+            detKeypointsShiTomasi(keypoints, imgGray, &t_det, bVis);
         }
         else
         {
             if(detectorType.compare("HARRIS") == 0)
-                detKeypointsHarris(keypoints, imgGray, bVis);
+                detKeypointsHarris(keypoints, imgGray, &t_det, bVis);
             else
-                detKeypointsModern(keypoints, imgGray, detectorType, bVis);
+                detKeypointsModern(keypoints, imgGray, detectorType, &t_det, bVis);
         }
 
         bVis = false;
@@ -252,8 +232,11 @@ int main(int argc, const char *argv[])
             vector<cv::KeyPoint> rect_kpts;
             for(auto &itr : keypoints)
             {
-                if(vehicleRect.contains(itr.pt)) 
+                if(vehicleRect.contains(itr.pt))
+                {
                     rect_kpts.push_back(itr);
+                } 
+                    
             }
             keypoints.clear();
             keypoints = rect_kpts;
@@ -304,10 +287,13 @@ int main(int argc, const char *argv[])
         // Floating-point descriptors: SIFT, SURF, GLOH, etc.
         cv::Mat descriptors;
         string descriptorType = desc_type;
-        descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType);
+        cout << "keypoint size: " << (dataBuffer.end() - 1)->keypoints.size() << endl;
+        
+        descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType, &t_desc);
 
         // Push the descriptors of the current frame into the end of the data buffer
         (dataBuffer.end() - 1)->descriptors = descriptors;
+
         cout << "#6 : EXTRACT DESCRIPTORS done" << endl;
 
 
@@ -321,7 +307,6 @@ int main(int argc, const char *argv[])
             string descType = "DES_BINARY"; // DES_BINARY, DES_HOG
             // https://answers.opencv.org/question/10046/feature-2d-feature-matching-fails-with-assert-statcpp/
             descType = (detectorType.compare("SIFT") == 0) || (descriptorType.compare("SIFT")) == 0 ? "DES_HOG" : "DES_BINARY";
-            std::cout << "DetectorType: " << detectorType << " DescriptorType: " << descriptorType << std::endl;
             string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
             if(matcherType.compare("MAT_FLANN") == 0)
                 selectorType = "SEL_KNN";
@@ -352,7 +337,7 @@ int main(int argc, const char *argv[])
 
             /* COMPUTE TTC ON OBJECT IN FRONT */
 
-            // Loop over all the BB match pairs
+             // Loop over all the BB match pairs
             for (auto it1 = (dataBuffer.end() - 1)->bbMatches.begin(); it1 != (dataBuffer.end() - 1)->bbMatches.end(); ++it1)
             {
                 // Find the bounding boxes associates with the current match
@@ -390,7 +375,7 @@ int main(int argc, const char *argv[])
                     computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
                     //// EOF STUDENT ASSIGNMENT
 
-                    bVis = true;
+                    bVis = false;
                     if (bVis)
                     {
                         cv::Mat visImg = (dataBuffer.end() - 1)->cameraImg.clone();
@@ -409,12 +394,157 @@ int main(int argc, const char *argv[])
                     }
                     bVis = false;
 
+                    test.getKeypoint((dataBuffer.end() - 1)->keypoints.size());
+                    test.getElapsedTime(t_det, t_desc);
+                    test.emplaceTTC(ttcCamera, ttcLidar);
+
                 } // eof TTC computation
             } // eof loop over all BB matches            
+        }
+        else
+        {
+            int imgNum = 0;
+            logStream << det_type << ", " << desc_type << ", " << imgNum << ", " << t_det << ", ";
+            logStream << t_desc << ", " << (dataBuffer.end() - 1)->keypoints.size() << ", , ," <<endl;
+        }
+         
+    } // eof loop over all images
 
+    test.getDiff();
+    test.getMean();
+
+    for(int imgNum = 0; imgNum < imgEndIndex; imgNum++) // 0000000001.png - 0000000019.png
+    {
+        logStream << det_type << ", " << desc_type << ", " << imgNum + 1 << ", " << test.detDescTime[imgNum].first << ", ";
+        logStream << test.detDescTime[imgNum].second << ", " << test.keypoints[imgNum] << ", " << test.ttcCameraLidar[imgNum].first << ", ";
+        logStream << test.ttcCameraLidar[imgNum].second << ", " << test.diffTTC[imgNum];
+        if(imgNum == (imgEndIndex - 1))
+        {
+            logStream << ", " << test.getMean() << endl;
+        }
+        else
+        {
+            logStream << endl;
+        }
+        
+    }
+}
+
+int main(int argc, const char *argv[])
+{
+    string detector[] = {"SHITOMASI", "HARRIS", "FAST", "BRISK", "ORB", "AKAZE", "SIFT"};
+    string descriptor[] = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
+
+    string logFile = "../FP6_Performance_Evaluation.csv";
+    ofstream logStream;
+    logStream.open(logFile);
+    logStream << "Detector Type, Descriptor Type, Image Number, Detector Elapsed Time[ms], Descriptor Elasped Time [ms], ";
+    logStream << "Keypoints (#), TTC Camera [s], TTC LiDAR [s], |TCC Camera - TTC LiDAR| [s], Mean(|TCC Camera - TTC LiDAR|) [s]";
+    logStream << endl;
+
+    bool auto_run = true;
+    bool err_handle = false;
+    
+    if(!auto_run)
+    {
+        string det_type = "";     // SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
+        string desc_type = "";        // BRIEF, ORB, FREAK, AKAZE, SIFT
+
+        // Choose a detector type according the passed argument(s)
+        if(argc > 1)
+        {
+            for(int i = 0; i < sizeof(detector) / sizeof(string); i++)
+            {
+                if(detector[i].compare(argv[1]) == 0)
+                {
+                    det_type = argv[1];
+                    break;
+                }
+            }
+            if(det_type.compare("") == 0)
+            {
+                cout << "The given detector argument does not exist. The default detector method will be used" << endl;
+                det_type = "ORB";
+            }      
+        }
+        else if(argc == 1)
+        {
+            cout << "No detector and descriptor arguments are passed. The default detector and descriptor methods will be used" << endl;
+            det_type = "ORB";
+            desc_type = "FREAK";
         }
 
-    } // eof loop over all images
+        // Choose a descriptor type according the passed argument(s)
+        if(argc > 2)
+        {
+            // The SIFT detector is incompatible with the ORB and the AKAZE descriptors
+            bool err_sift = det_type.compare("SIFT") == 0 && (descriptor[1].compare(argv[2]) == 0 || descriptor[3].compare(argv[2]) == 0);
+            // The AKAZE detector is only compatible with the AKAZE detector
+            bool err_akaze = det_type.compare("AKAZE") == 0 && descriptor[3].compare(argv[2]) != 0;
+            for(int i = 0; i < sizeof(descriptor) / sizeof(string); i++)
+            {
+                if(descriptor[i].compare(argv[2]) == 0)
+                {
+                    if(err_sift && err_handle)
+                    {
+                        cout << "The given descriptor argument is incompatible with the given detector type. The default descriptor method will be used" << endl;
+                        desc_type = descriptor[4]; // SIFT
+                        break;
+                    }
+                    if(err_akaze && err_handle)
+                    {
+                        cout << "The given descriptor argument is incompatible with the given detector type. The default descriptor method will be used" << endl;
+                        desc_type = descriptor[3]; // AKAZE
+                        break;
+                    }
+                    desc_type = argv[2];
+                    break;
+                }
+            }
+            if(desc_type.compare("") == 0)
+            {
+                cout << "The given descriptor argument does not exist. The default descriptor method will be used" << endl;
+                desc_type = "FREAK";
+            }
+        }
+        else if(argc == 2)
+        {
+            cout << "No detector argument is passed. The default descriptor method will be used." << endl;
+            // The SIFT detector is incompatible with the ORB and the AKAZE descriptors
+            if(det_type.compare("SIFT") == 0)
+                desc_type = descriptor[4]; // BRIEF, FREAK, [SIFT]
+            // The AKAZE detector is only compatible with the AKAZE detector
+            else if(det_type.compare("AKAZE"))
+                desc_type = descriptor[3];
+            else
+                desc_type = "FREAK";
+        }
+
+            evaluate(det_type, desc_type, logStream);
+        }
+
+    else
+    {
+        //det_type = argv[1];
+        //desc_type = argv[2];
+
+        for(auto det_type : detector)
+        {
+            for(auto desc_type : descriptor)
+            {
+                if(desc_type.compare("AKAZE") == 0)
+                {
+                    if(det_type.compare("AKAZE") != 0)
+                        continue;
+                }
+                evaluate(det_type, desc_type, logStream);
+                logStream << endl;
+            }
+            logStream << endl;
+        }
+    }
+
+    logStream.close();
 
     return 0;
 }

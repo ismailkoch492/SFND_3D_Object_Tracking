@@ -1,4 +1,3 @@
-
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -12,23 +11,23 @@
 
 using namespace std;
 
-// detects objects in an image using the YOLO library and a set of pre-trained objects from the COCO database;
-// a set of 80 classes is listed in "coco.names" and pre-trained weights are stored in "yolov3.weights"
+// Detects objects in an image using the YOLOv3 method and a set of pre-trained objects from the COCO dataset;
+// A set of 80 classes is listed in "coco.names" and the pre-trained weights are stored in "yolov3.weights"
 void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThreshold, float nmsThreshold, 
                    std::string basePath, std::string classesFile, std::string modelConfiguration, std::string modelWeights, bool bVis)
 {
-    // load class names from file
+    // Load class names from the file
     vector<string> classes;
     ifstream ifs(classesFile.c_str());
     string line;
     while (getline(ifs, line)) classes.push_back(line);
     
-    // load neural network
+    // Load the neural network
     cv::dnn::Net net = cv::dnn::readNetFromDarknet(modelConfiguration, modelWeights);
     net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
     net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
     
-    // generate 4D blob from input image
+    // Generate a 4D blob from the input image
     cv::Mat blob;
     vector<cv::Mat> netOutput;
     double scalefactor = 1/255.0;
@@ -38,16 +37,16 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
     bool crop = false;
     cv::dnn::blobFromImage(img, blob, scalefactor, size, mean, swapRB, crop);
     
-    // Get names of output layers
+    // Get names of the output layers
     vector<cv::String> names;
-    vector<int> outLayers = net.getUnconnectedOutLayers(); // get  indices of  output layers, i.e.  layers with unconnected outputs
-    vector<cv::String> layersNames = net.getLayerNames(); // get  names of all layers in the network
+    vector<int> outLayers = net.getUnconnectedOutLayers(); // get indices of  output layers, i.e. layers with unconnected outputs
+    vector<cv::String> layersNames = net.getLayerNames(); // get names of all layers in the network
     
     names.resize(outLayers.size());
-    for (size_t i = 0; i < outLayers.size(); ++i) // Get the names of the output layers in names
+    for (size_t i = 0; i < outLayers.size(); ++i) // Get the names of the output layers
         names[i] = layersNames[outLayers[i] - 1];
     
-    // invoke forward propagation through network
+    // Invoke forward propagation through the network
     net.setInput(blob);
     net.forward(netOutput, names);
     
@@ -81,7 +80,7 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
         }
     }
     
-    // perform non-maxima suppression
+    // Perform the non-maxima suppression
     vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
     for(auto it=indices.begin(); it!=indices.end(); ++it) {
@@ -95,13 +94,13 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
         bBoxes.push_back(bBox);
     }
     
-    // show results
+    // Visualize the results
     if(bVis) {
         
         cv::Mat visImg = img.clone();
         for(auto it=bBoxes.begin(); it!=bBoxes.end(); ++it) {
             
-            // Draw rectangle displaying the bounding box
+            // Draw a rectangle displaying the bounding box
             int top, left, width, height;
             top = (*it).roi.y;
             left = (*it).roi.x;
@@ -112,7 +111,7 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
             string label = cv::format("%.2f", (*it).confidence);
             label = classes[((*it).classID)] + ":" + label;
         
-            // Display label at the top of the bounding box
+            // Display the label at the top of the bounding box
             int baseLine;
             cv::Size labelSize = getTextSize(label, cv::FONT_ITALIC, 0.5, 1, &baseLine);
             top = max(top, labelSize.height);
@@ -124,6 +123,6 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
         string windowName = "Object classification";
         cv::namedWindow( windowName, 1 );
         cv::imshow( windowName, visImg );
-        cv::waitKey(0); // wait for key to be pressed
+//cv::waitKey(0); // wait for any key to be pressed
     }
 }

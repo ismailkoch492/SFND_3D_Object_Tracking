@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <algorithm>
 #include <opencv2/highgui/highgui.hpp>
@@ -8,7 +7,7 @@
 
 using namespace std;
 
-// remove Lidar points based on min. and max distance in X, Y and Z
+// Remove the Lidar points based on min. and max distance in X, Y and Z
 void cropLidarPoints(std::vector<LidarPoint> &lidarPoints, float minX, float maxX, float maxY, float minZ, float maxZ, float minR)
 {
     std::vector<LidarPoint> newLidarPts; 
@@ -24,21 +23,20 @@ void cropLidarPoints(std::vector<LidarPoint> &lidarPoints, float minX, float max
 }
 
 
-
-// Load Lidar points from a given location and store them in a vector
+// Load the Lidar points from a given location and store them in a vector
 void loadLidarFromFile(vector<LidarPoint> &lidarPoints, string filename)
 {
-    // allocate 4 MB buffer (only ~130*4*4 KB are needed)
+    // Allocate 4 MB buffer (only ~130*4*4 KB are needed)
     unsigned long num = 1000000;
     float *data = (float*)malloc(num*sizeof(float));
     
-    // pointers
+    // Pointers for the Lidar sensor data
     float *px = data+0;
     float *py = data+1;
     float *pz = data+2;
     float *pr = data+3;
     
-    // load point cloud
+    // load the point cloud
     FILE *stream;
     stream = fopen (filename.c_str(),"rb");
     num = fread(data,sizeof(float),num,stream)/4;
@@ -55,14 +53,14 @@ void loadLidarFromFile(vector<LidarPoint> &lidarPoints, string filename)
 
 void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize, cv::Size imageSize, bool bWait)
 {
-    // create topview image
+    // Generate a topview image
     cv::Mat topviewImg(imageSize, CV_8UC3, cv::Scalar(0, 0, 0));
 
-    // plot Lidar points into image
+    // Plot Lidar points into the image
     for (auto it = lidarPoints.begin(); it != lidarPoints.end(); ++it)
     {
-        float xw = (*it).x; // world position in m with x facing forward from sensor
-        float yw = (*it).y; // world position in m with y facing left from sensor
+        float xw = (*it).x; // world position in m with x facing forward from the sensor
+        float yw = (*it).y; // world position in m with y facing left from the sensor
 
         int y = (-xw * imageSize.height / worldSize.height) + imageSize.height;
         int x = (-yw * imageSize.height / worldSize.height) + imageSize.width / 2;
@@ -70,7 +68,7 @@ void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize, 
         cv::circle(topviewImg, cv::Point(x, y), 5, cv::Scalar(0, 0, 255), -1);
     }
 
-    // plot distance markers
+    // Plot distance markers
     float lineSpacing = 2.0; // gap between distance markers
     int nMarkers = floor(worldSize.height / lineSpacing);
     for (size_t i = 0; i < nMarkers; ++i)
@@ -79,7 +77,7 @@ void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize, 
         cv::line(topviewImg, cv::Point(0, y), cv::Point(imageSize.width, y), cv::Scalar(255, 0, 0));
     }
 
-    // display image
+    // Display the image
     string windowName = "Top-View Perspective of LiDAR data";
     cv::namedWindow(windowName, 2);
     cv::imshow(windowName, topviewImg);
@@ -89,9 +87,10 @@ void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize, 
     }
 }
 
+
 void showLidarImgOverlay(cv::Mat &img, std::vector<LidarPoint> &lidarPoints, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT, cv::Mat *extVisImg)
 {
-    // init image for visualization
+    // Init image for the visualization
     cv::Mat visImg; 
     if(extVisImg==nullptr)
     {
@@ -103,8 +102,8 @@ void showLidarImgOverlay(cv::Mat &img, std::vector<LidarPoint> &lidarPoints, cv:
 
     cv::Mat overlay = visImg.clone();
 
-    // find max. x-value
-    double maxVal = 0.0; 
+    // Find the max. x-value
+    double maxVal = 0.0;
     for(auto it=lidarPoints.begin(); it!=lidarPoints.end(); ++it)
     {
         maxVal = maxVal<it->x ? it->x : maxVal;
@@ -134,7 +133,7 @@ void showLidarImgOverlay(cv::Mat &img, std::vector<LidarPoint> &lidarPoints, cv:
     float opacity = 0.6;
     cv::addWeighted(overlay, opacity, visImg, 1 - opacity, 0, visImg);
 
-    // return augmented image or wait if no image has been provided
+    // Return the augmented image or wait if no image has been provided
     if (extVisImg == nullptr)
     {
         string windowName = "LiDAR data on image overlay";
