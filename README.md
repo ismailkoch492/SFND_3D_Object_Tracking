@@ -35,7 +35,7 @@ In this final project, the missing parts in the schematic have been successfully
 3. Compile: `cmake .. -DCMAKE_BUILD_TYPE="Release" -DOPENCV_ENABLE_NONFREE=ON && make`
 
 ## Run It
-1. Running the project: `./3D_object_tracking <DetType> <DescType>`. Replace the <DetType> <DescType> with detector and descriptor types, respectively.
+1. Running the project: `./3D_object_tracking <DetType> <DescType>`. Replace the `<DetType>` and `<DescType>` with detector and descriptor types, respectively.
 2. Running the test: `./test_3D_object_tracking`
 
 ## Rubrics
